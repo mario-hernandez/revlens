@@ -61,4 +61,8 @@ revlens.config.ejemplo.json
 
 ## Privacidad y seguridad
 Escucha solo en `127.0.0.1`. El contexto y los comentarios son privados del dueño. La cola nunca se
-borra (backup + auto-restauración). Exponerlo en red es decisión del dueño y va tras su propia auth.
+borra (backup + auto-restauración). El plano de control vive en `/_rev/api/*` tras una guardia de
+header propio + Origin (una web abierta en otra pestaña no puede leer tus comentarios ni quemar tu
+cuota del asesor), y el proxy no sigue redirects fuera del host configurado (anti-SSRF). El anclaje
+sobrevive a texto repetido y a DOM dinámico; si el contenido comentado cambia, el comentario se marca
+«desanclado» en vez de saltar a otro sitio. Exponerlo en red es decisión del dueño y va tras su propia auth.
