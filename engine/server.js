@@ -23,8 +23,12 @@ const BASE = path.dirname(path.resolve(CFG_PATH)); // todas las rutas de la conf
 const abs = (p, d) => path.resolve(BASE, p || d);
 
 const ENGINE = __dirname;
-const PRODUCTO = abs((CFG.producto && CFG.producto.dir) || './producto');
-const RAIZ = (CFG.producto && CFG.producto.raiz) || 'index.html';
+// Dos modos de producto: (a) carpeta local (dir) · (b) web pública en vivo (url → proxy con inyección).
+const PROD = CFG.producto || {};
+const MODO = PROD.url ? 'proxy' : 'dir';
+const ORIGIN = MODO === 'proxy' ? new URL(PROD.url) : null; // host permitido del proxy (no es open-proxy)
+const PRODUCTO = abs(PROD.dir || './producto');
+const RAIZ = PROD.raiz || 'index.html';
 const CONTEXTO_FILE = abs(CFG.contexto || './contexto.md');
 const COLA = abs(CFG.cola || './comentarios-pendientes.jsonl');
 const BAK = COLA + '.bak';
@@ -112,6 +116,27 @@ async function asesor(mensaje, sid) {
   return g;
 }
 
+// ── modo proxy: sirve una web pública en vivo con la capa inyectada ────────────
+// Proxy transparente al MISMO host de ORIGIN (no open-proxy): los recursos con ruta relativa del
+// sitio pasan por aquí y se reenvían; en el HTML se inyecta el overlay y se quitan CSP/base/X-Frame.
+async function proxy(req, res, url) {
+  let target; try { target = new URL(url.pathname + url.search, ORIGIN.origin); } catch { res.writeHead(400); return res.end(); }
+  if (target.host !== ORIGIN.host) { res.writeHead(404); return res.end('fuera del sitio'); }
+  try {
+    const r = await fetch(target, { redirect: 'follow', headers: { 'user-agent': req.headers['user-agent'] || 'revlens', accept: req.headers.accept || '*/*', 'accept-encoding': 'identity' } });
+    const ct = r.headers.get('content-type') || 'application/octet-stream';
+    if (/text\/html/i.test(ct)) {
+      let html = await r.text();
+      html = html.replace(/<base\b[^>]*>/ig, '');                                   // sin <base>: todo queda same-origin por el proxy
+      const tag = '<script src="/_rev/overlay.js"></script>';
+      html = /<\/body>/i.test(html) ? html.replace(/<\/body>/i, tag + '\n</body>') : html + tag;
+      res.writeHead(r.status, { 'Content-Type': 'text/html; charset=utf-8' }); return res.end(html); // sin CSP/X-Frame: los omitimos
+    }
+    const buf = Buffer.from(await r.arrayBuffer());
+    res.writeHead(r.status, { 'Content-Type': ct }); return res.end(buf);
+  } catch (e) { res.writeHead(502); res.end('proxy: ' + (e && e.message || 'error')); }
+}
+
 // ── server ──────────────────────────────────────────────────────────────────
 http.createServer(async (req, res) => {
   try {
@@ -146,6 +171,7 @@ http.createServer(async (req, res) => {
     if (p === '/api/comentarios') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify(leerCola())); }
 
     for (const e of EXTRA_DIRS) if (e.prefijo && p.startsWith(e.prefijo)) return serveFrom(res, e.dir, p.slice(e.prefijo.length));
+    if (MODO === 'proxy') return proxy(req, res, url);
     return serveFrom(res, PRODUCTO, p === '/' ? RAIZ : p, true);
   } catch (e) { try { res.writeHead(500); res.end(); } catch {} }
-}).listen(PORT, '127.0.0.1', () => console.log(`revlens · «${TITULO}» en http://localhost:${PORT} · producto=${path.relative(BASE, PRODUCTO)} · IA=${IA.backend} (claude=${IA.claudeModel}, gemini=${GEMINI_KEY ? 'key✓' : 'sin key'})`));
+}).listen(PORT, '127.0.0.1', () => console.log(`revlens · «${TITULO}» en http://localhost:${PORT} · producto=${MODO === 'proxy' ? 'proxy → ' + ORIGIN.origin : path.relative(BASE, PRODUCTO)} · IA=${IA.backend} (claude=${IA.claudeModel}, gemini=${GEMINI_KEY ? 'key✓' : 'sin key'})`));

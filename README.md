@@ -42,6 +42,10 @@ El flujo, definido en **`AGENTE.md`** (el contrato del agente):
 
 El motor de `engine/` no se toca; todo lo particular vive en la instancia (config + contexto).
 
+**Dos modos de producto:** una **web pública** (`producto.url` → proxy en vivo: revlens la sirve tal
+cual con la capa inyectada, sin copiarla) o una **carpeta local** (`producto.dir`: HTML estático,
+informe, export). En ambos, el anclaje es por contenido, así que la revisión funciona igual.
+
 ## Backend del asesor
 `claude -p` por defecto (gratis, comparte la cuota de Claude Code) con **fallback automático a Gemini**
 (API propia) si topa el límite. Configurable a solo-claude o solo-gemini. Transporte agnóstico.

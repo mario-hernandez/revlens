@@ -26,9 +26,13 @@ proyecto.** Cuanto mejor derives el `contexto.md`, mejor asesora el sistema.
 
 ## A · Generar la instancia y levantar
 
-### 1. Localiza/prepara el producto
-Debe renderizarse en HTML (web estática, informe HTML, texto maquetado, export de un doc…). Si es un
-servidor propio, exporta/renderiza una copia estática o añade un `servirTambien` para sus rutas.
+### 1. Elige el modo de producto
+- **Web pública en una URL** → **modo proxy** (lo más habitual): `"producto": { "url": "https://sitio.com" }`.
+  revlens sirve la web real en vivo a través de un proxy same-host e inyecta la capa; los assets y la
+  navegación entre páginas del sitio funcionan solos (todo lo relativo pasa por el proxy). No copias nada.
+  Quita CSP y `<base>` para poder inyectar. Sitios con login o que exijan cabeceras propias: no cubiertos
+  por el MVP (usa una copia estática). No es open-proxy: solo reenvía al host de esa URL.
+- **Carpeta local** (HTML estático, informe, export) → `"producto": { "dir": "./producto", "raiz": "index.html" }`.
 
 ### 2. Genera `revlens.config.json` (junto a él van el contexto y la cola)
 Parte de `revlens.config.ejemplo.json` y ajústalo al producto:
