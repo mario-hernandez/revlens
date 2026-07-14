@@ -27,6 +27,7 @@ const ENGINE = __dirname;
 const PROD = CFG.producto || {};
 const MODO = PROD.url ? 'proxy' : 'dir';
 const ORIGIN = MODO === 'proxy' ? new URL(PROD.url) : null; // host permitido del proxy (no es open-proxy)
+const ENTRADA = ORIGIN ? ((ORIGIN.pathname || '/') + ORIGIN.search) : null; // ruta EXACTA configurada (con su path)
 const PRODUCTO = abs(PROD.dir || './producto');
 const RAIZ = PROD.raiz || 'index.html';
 const CONTEXTO_FILE = abs(CFG.contexto || './contexto.md');
@@ -78,7 +79,9 @@ function viaClaude(mensaje, sid) {
     execFile('claude', args, { cwd: BASE, timeout: 120000, maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => {
       if (err && !stdout) return resolve({ ok: false, limite: false, error: err.message || 'claude no disponible' });
       try { const j = JSON.parse(stdout); const t = j.result || '';
-        if (j.is_error || esLimite(t)) return resolve({ ok: false, limite: esLimite(t), error: t || 'error de claude' });
+        // Solo es 'límite' si claude marcó error (is_error). NO mirar esLimite sobre una respuesta OK:
+        // un asesoramiento válido puede mencionar "rate limit"/"quota" y NO es un fallo de cuota.
+        if (j.is_error) return resolve({ ok: false, limite: esLimite(t), error: t || 'error de claude' });
         resolve({ ok: true, texto: t, sid: j.session_id || sid, motor: 'claude' });
       } catch { resolve({ ok: false, limite: false, error: 'respuesta ilegible de claude' }); }
     });
@@ -123,7 +126,14 @@ async function proxy(req, res, url) {
   let target; try { target = new URL(url.pathname + url.search, ORIGIN.origin); } catch { res.writeHead(400); return res.end(); }
   if (target.host !== ORIGIN.host) { res.writeHead(404); return res.end('fuera del sitio'); }
   try {
-    const r = await fetch(target, { redirect: 'follow', headers: { 'user-agent': req.headers['user-agent'] || 'revlens', accept: req.headers.accept || '*/*', 'accept-encoding': 'identity' } });
+    // redirect MANUAL (anti-SSRF): no seguimos a ciegas a otro host. Un 3xx same-host se refleja al
+    // navegador como path local (sigue por el proxy); a otro host o protocolo no-http → BLOQUEADO. + timeout.
+    const r = await fetch(target, { redirect: 'manual', signal: AbortSignal.timeout(20000), headers: { 'user-agent': req.headers['user-agent'] || 'revlens', accept: req.headers.accept || '*/*', 'accept-encoding': 'identity' } });
+    if (r.status >= 300 && r.status < 400 && r.headers.get('location')) {
+      let dest; try { dest = new URL(r.headers.get('location'), target); } catch { res.writeHead(502); return res.end('redirect inválido'); }
+      if (dest.host !== ORIGIN.host || !/^https?:$/.test(dest.protocol)) { res.writeHead(502); return res.end('redirect fuera del sitio bloqueado'); }
+      res.writeHead(302, { Location: dest.pathname + dest.search }); return res.end();
+    }
     const ct = r.headers.get('content-type') || 'application/octet-stream';
     if (/text\/html/i.test(ct)) {
       let html = await r.text();
@@ -144,34 +154,50 @@ http.createServer(async (req, res) => {
     if (p === '/_rev/overlay.js') return serveFrom(res, ENGINE, 'overlay.js');
     if (p === '/_rev/config') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ titulo: TITULO, puntos: PUNTOS })); }
 
-    if (req.method === 'POST' && p === '/api/asesor') {
-      const body = JSON.parse(await readBody(req) || '{}');
-      const msg = String(body.mensaje || '').slice(0, 8000);
-      if (!msg.trim()) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end('{"error":"vacío"}'); }
-      const r = await asesor(msg, body.sid);
-      res.writeHead(r.ok ? 200 : 502, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify(r));
+    // ── plano de control bajo /_rev/api/ (NO colisiona con el /api/* del sitio proxeado, B4) ──
+    if (p.startsWith('/_rev/api/')) {
+      // Guardia anti-CSRF/abuso: header custom (fuerza preflight que no respondemos) + Origin propio.
+      if ((req.headers['x-revlens'] || '') !== '1') { res.writeHead(403, { 'Content-Type': 'application/json' }); return res.end('{"error":"control"}'); }
+      const o = req.headers.origin; if (o) { try { if (new URL(o).host !== req.headers.host) { res.writeHead(403); return res.end(); } } catch { res.writeHead(403); return res.end(); } }
+      const J = { 'Content-Type': 'application/json' };
+      const sub = p.slice('/_rev/api/'.length);
+      if (req.method === 'POST' && sub === 'asesor') {
+        const body = JSON.parse(await readBody(req) || '{}');
+        const msg = String(body.mensaje || '').slice(0, 8000);
+        if (!msg.trim()) { res.writeHead(400, J); return res.end('{"error":"vacío"}'); }
+        const r = await asesor(msg, body.sid);
+        res.writeHead(r.ok ? 200 : 502, J); return res.end(JSON.stringify(r));
+      }
+      if (req.method === 'POST' && sub === 'comentario') {
+        const b = JSON.parse(await readBody(req) || '{}');
+        const c = { ts: new Date().toISOString(), id: crypto.randomBytes(4).toString('hex'), estado: 'pendiente',
+          seccion: String(b.seccion || '').slice(0, 120), ancla: String(b.ancla || '').slice(0, 800),
+          selector: String(b.selector || '').slice(0, 400), indice: Number.isInteger(b.indice) ? b.indice : 0, hash: String(b.hash || '').slice(0, 40),
+          inquietud: String(b.inquietud || '').slice(0, 2000), texto: String(b.texto || '').slice(0, 4000), sid: String(b.sid || '').slice(0, 40) };
+        const all = leerCola(); all.push(c); escribirCola(all);
+        res.writeHead(200, J); return res.end(JSON.stringify(c));
+      }
+      const mc = sub.match(/^comentario\/([a-f0-9]{8})$/);
+      if (mc && (req.method === 'PUT' || req.method === 'DELETE')) {
+        let b = {}; if (req.method === 'PUT') b = JSON.parse(await readBody(req) || '{}'); // readBody ANTES de leerCola (anti lost-update)
+        const all = leerCola(); const i = all.findIndex(c => c.id === mc[1]);
+        if (i < 0) { res.writeHead(404, J); return res.end('{"error":"no existe"}'); }
+        if (req.method === 'DELETE') all.splice(i, 1);
+        else { if (typeof b.texto === 'string') all[i].texto = b.texto.slice(0, 4000); if (typeof b.estado === 'string') all[i].estado = b.estado.slice(0, 20); all[i].editado = new Date().toISOString(); }
+        escribirCola(all);
+        res.writeHead(200, J); return res.end(JSON.stringify(req.method === 'DELETE' ? { ok: true } : all[i]));
+      }
+      if (sub === 'comentarios') { res.writeHead(200, J); return res.end(JSON.stringify(leerCola())); }
+      res.writeHead(404, J); return res.end('{"error":"ruta"}');
     }
-    if (req.method === 'POST' && p === '/api/comentario') {
-      const b = JSON.parse(await readBody(req) || '{}');
-      const c = { ts: new Date().toISOString(), id: crypto.randomBytes(4).toString('hex'), estado: 'pendiente',
-        seccion: String(b.seccion || '').slice(0, 120), ancla: String(b.ancla || '').slice(0, 500),
-        inquietud: String(b.inquietud || '').slice(0, 2000), texto: String(b.texto || '').slice(0, 4000), sid: String(b.sid || '').slice(0, 40) };
-      const all = leerCola(); all.push(c); escribirCola(all);
-      res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify(c));
-    }
-    const mc = p.match(/^\/api\/comentario\/([a-f0-9]{8})$/);
-    if (mc && (req.method === 'PUT' || req.method === 'DELETE')) {
-      const all = leerCola(); const i = all.findIndex(c => c.id === mc[1]);
-      if (i < 0) { res.writeHead(404, { 'Content-Type': 'application/json' }); return res.end('{"error":"no existe"}'); }
-      if (req.method === 'DELETE') all.splice(i, 1);
-      else { const b = JSON.parse(await readBody(req) || '{}'); if (typeof b.texto === 'string') all[i].texto = b.texto.slice(0, 4000); if (typeof b.estado === 'string') all[i].estado = b.estado.slice(0, 20); all[i].editado = new Date().toISOString(); }
-      escribirCola(all);
-      res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify(req.method === 'DELETE' ? { ok: true } : all[i]));
-    }
-    if (p === '/api/comentarios') { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify(leerCola())); }
 
     for (const e of EXTRA_DIRS) if (e.prefijo && p.startsWith(e.prefijo)) return serveFrom(res, e.dir, p.slice(e.prefijo.length));
-    if (MODO === 'proxy') return proxy(req, res, url);
+    if (MODO === 'proxy') {
+      // la raíz local sirve la URL EXACTA configurada (con su path), no la home del dominio → así los
+      // recursos relativos de esa página resuelven bien y la navegación sigue siendo same-host.
+      if ((p === '/' || p === '') && ENTRADA && ENTRADA !== '/') { res.writeHead(302, { Location: ENTRADA }); return res.end(); }
+      return proxy(req, res, url);
+    }
     return serveFrom(res, PRODUCTO, p === '/' ? RAIZ : p, true);
   } catch (e) { try { res.writeHead(500); res.end(); } catch {} }
 }).listen(PORT, '127.0.0.1', () => console.log(`revlens · «${TITULO}» en http://localhost:${PORT} · producto=${MODO === 'proxy' ? 'proxy → ' + ORIGIN.origin : path.relative(BASE, PRODUCTO)} · IA=${IA.backend} (claude=${IA.claudeModel}, gemini=${GEMINI_KEY ? 'key✓' : 'sin key'})`));

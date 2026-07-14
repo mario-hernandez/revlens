@@ -76,7 +76,8 @@ hay Claude Code) y cae a Gemini si topa el límite; si no hay Claude, pon `"back
 
 **Verifica antes de entregar**: `curl localhost:<puerto>/ | grep _rev/overlay.js` (overlay inyectado),
 `curl -s localhost:<puerto>/_rev/config` (título/puntos correctos), y una consulta de prueba a
-`POST /api/asesor` con `{"mensaje":"prueba"}`.
+`POST /_rev/api/asesor` con `{"mensaje":"prueba"}` y el header `X-Revlens: 1` (sin él, 403: es la
+guardia anti-CSRF del plano de control; todas las rutas `/_rev/api/*` lo exigen).
 
 ---
 
@@ -84,12 +85,16 @@ hay Claude Code) y cae a Gemini si topa el límite; si no hay Claude, pon `"back
 
 La cola `comentarios-pendientes.jsonl` es append-only, una línea por comentario:
 ```json
-{ "id","ts","estado":"pendiente","seccion":"dónde","ancla":"el fragmento exacto",
+{ "id","ts","estado":"pendiente","seccion":"dónde","ancla":"el fragmento exacto (hasta 800 chars)",
+  "selector":"selector CSS estructural del punto","indice":0,
   "inquietud":"lo que sintió el humano","texto":"la instrucción a ejecutar","sid" }
 ```
-Para cada comentario `pendiente`: localiza el punto en el producto por `ancla` (búsqueda por
-contenido, NO por línea), aplica `texto` respetando las reglas del `contexto.md`, y marca el estado:
-`PUT /api/comentario/<id>` con `{"estado":"hecho"}` (o edítalo en disco). Nunca publiques/despliegues
+Para cada comentario `pendiente`: localiza el punto en el producto — primero por `selector`
+(validándolo contra `ancla`), si no por `ancla` + `indice` (índice de ocurrencia cuando el texto se
+repite); NUNCA por línea —, aplica `texto` respetando las reglas del `contexto.md`, y marca el estado:
+`PUT /_rev/api/comentario/<id>` con `{"estado":"hecho"}` y header `X-Revlens: 1` (o edítalo en disco).
+Si el panel marcaba un comentario «⚠ desanclado», el contenido cambió después de comentarlo: resuelve
+la intención con el `ancla` guardado y confírmalo con el dueño si hay ambigüedad. Nunca publiques/despliegues
 el resultado sin confirmación explícita del dueño.
 
 ---
