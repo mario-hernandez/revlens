@@ -1,0 +1,6 @@
+# datos de revisión (por instancia) — nunca versionar
+**/comentarios-pendientes.jsonl
+**/comentarios-pendientes.jsonl.bak
+**/_pruebas*.jsonl*
+.DS_Store
+node_modules/

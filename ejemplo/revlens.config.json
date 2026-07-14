@@ -1,0 +1,9 @@
+{
+  "titulo": "REVISIÓN · Acme (demo)",
+  "puerto": 8140,
+  "producto": { "dir": "./producto", "raiz": "index.html" },
+  "puntos": "p, li, h1, h2, h3, figcaption, blockquote",
+  "contexto": "./contexto.md",
+  "cola": "./comentarios-pendientes.jsonl",
+  "ia": { "backend": "auto", "claudeModel": "claude-sonnet-5", "geminiModel": "gemini-2.5-flash", "geminiKeychain": "gemini-api" }
+}

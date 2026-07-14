@@ -1,0 +1,10 @@
+{
+  "name": "revlens",
+  "version": "1.0.0",
+  "description": "Capa de revisión asistida por IA, acoplable por un agente a cualquier producto (web/informe/texto). Clic en un punto → inquietud → el asesor IA que conoce el producto sugiere el comentario → cola anclada que otra IA procesa.",
+  "private": true,
+  "bin": { "revlens": "engine/server.js" },
+  "scripts": { "start": "node engine/server.js", "ejemplo": "cd ejemplo && node ../engine/server.js" },
+  "engines": { "node": ">=18" },
+  "license": "UNLICENSED"
+}

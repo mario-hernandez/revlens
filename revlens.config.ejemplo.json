@@ -1,0 +1,16 @@
+{
+  "titulo": "REVISIÓN · Mi producto",
+  "puerto": 8130,
+  "producto": { "dir": "./producto", "raiz": "index.html" },
+  "puntos": "p, li, h1, h2, h3, h4, figcaption, td, blockquote",
+  "contexto": "./contexto.md",
+  "cola": "./comentarios-pendientes.jsonl",
+  "ia": {
+    "backend": "auto",
+    "claudeModel": "claude-sonnet-5",
+    "geminiModel": "gemini-2.5-flash",
+    "geminiKeyEnv": "GOOGLE_GENAI_API_KEY",
+    "geminiKeychain": "gemini-api"
+  },
+  "servirTambien": []
+}
