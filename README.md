@@ -30,10 +30,17 @@ se convierte en una instrucción accionable, y menos anclada al punto exacto. re
 ```
 Pulsa **🎯 Comentar un punto**, clica una frase, escribe una inquietud y prueba «Consultar al asesor».
 
-## Acoplarlo a tu producto
-Lo hace un agente de IA siguiendo **`AGENTE.md`**: crea una carpeta-instancia con `revlens.config.json`
-(apuntando al producto y definiendo qué es «un punto») y `contexto.md` (las 5 capas), y lo levanta.
-El motor de `engine/` no se toca.
+## Acoplarlo a tu producto — lo hace un agente de IA
+El flujo, definido en **`AGENTE.md`** (el contrato del agente):
+1. El usuario le **entrega** al agente el documento/producto + material de contexto (un repo, un
+   directorio, un brief, o info suelta).
+2. El agente **genera** con el framework: `revlens.config.json` (a qué apunta, qué es «un punto») y
+   `contexto.md` (las 5 capas, **derivadas** del material — no rellenadas a mano).
+3. **Levanta** el servidor y da la URL.
+4. El usuario **revisa** (clica puntos, comenta con o sin asesor).
+5. El agente **procesa** la cola: aplica cada comentario al producto respetando el contexto.
+
+El motor de `engine/` no se toca; todo lo particular vive en la instancia (config + contexto).
 
 ## Backend del asesor
 `claude -p` por defecto (gratis, comparte la cuota de Claude Code) con **fallback automático a Gemini**

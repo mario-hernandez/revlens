@@ -3,22 +3,35 @@
 Eres un agente de IA y te han pedido montar **revlens** sobre un producto para que su dueño lo
 revise. revlens es una **capa de revisión asistida**: el humano clica un punto del producto, escribe
 lo que le inquieta, un **asesor IA que conoce el producto** le sugiere el comentario, y queda anclado
-en una cola que TÚ procesarás después. Tu trabajo tiene **dos momentos**: (A) acoplarlo y levantarlo,
-(B) cuando el dueño termine, procesar los comentarios.
+en una cola que TÚ procesarás después.
 
-No hace falta tocar `engine/` (el motor es genérico y estable). Solo creas la **instancia**.
+No hace falta tocar `engine/` (el motor es genérico y estable). Tu trabajo es **generar la instancia**
+(config + contexto) a partir de lo que te da el usuario, levantarla, y luego procesar la cola.
+
+## El flujo, de principio a fin
+```
+0. El usuario te ENTREGA: el documento/producto a revisar + material de contexto
+   (un repo, un directorio, un brief, o información suelta sobre el proyecto).
+1. TÚ (el LLM) LEES ese material y GENERAS con el framework:
+      · revlens.config.json   → a qué apunta y qué es «un punto»
+      · contexto.md           → las 5 capas, DERIVADAS del material (no las pides rellenas: las escribes tú)
+2. LEVANTAS el servidor y le das la URL al usuario.
+3. El usuario revisa: clica puntos, deja comentarios (con o sin el asesor).
+4. Cuando termina, TÚ PROCESAS la cola: aplicas cada comentario al producto respetando el contexto.
+```
+El valor está en el paso 1: **conviertes el material bruto del usuario en un asesor que ya conoce su
+proyecto.** Cuanto mejor derives el `contexto.md`, mejor asesora el sistema.
 
 ---
 
-## A · Acoplar y levantar (4 pasos)
+## A · Generar la instancia y levantar
 
-### 1. Apunta al producto
-El producto a revisar debe renderizarse en HTML (web estática, informe HTML, texto maquetado, export
-de un doc…). Ten su carpeta localizada. Si el producto es un servidor propio, exporta/renderiza una
-copia estática, o añade un `servirTambien` para sus rutas auxiliares.
+### 1. Localiza/prepara el producto
+Debe renderizarse en HTML (web estática, informe HTML, texto maquetado, export de un doc…). Si es un
+servidor propio, exporta/renderiza una copia estática o añade un `servirTambien` para sus rutas.
 
-### 2. Crea `revlens.config.json` (junto a él van el contexto y la cola)
-Copia `revlens.config.ejemplo.json` y ajústalo:
+### 2. Genera `revlens.config.json` (junto a él van el contexto y la cola)
+Parte de `revlens.config.ejemplo.json` y ajústalo al producto:
 
 ```json
 {
@@ -38,10 +51,15 @@ Copia `revlens.config.ejemplo.json` y ajústalo:
 - **`producto.dir`** es relativo a la config. Rutas auxiliares (un visor de PDF, assets externos) →
   `"servirTambien": [{ "prefijo": "/gate/", "dir": "../otro/public" }]`.
 
-### 3. Escribe `contexto.md` — LO QUE DECIDE LA CALIDAD DEL ASESOR
-Copia `plantillas/contexto.ejemplo.md` y rellena sus **5 capas** (quién es el asesor · qué es el
-producto · objetivo real · audiencia · reglas inviolables). Sé concreto: el asesor solo será tan
-bueno como este archivo. Aquí es donde el sistema deja de ser genérico y «conoce» el producto.
+### 3. GENERA `contexto.md` — LO QUE DECIDE LA CALIDAD DEL ASESOR
+Este es tu trabajo de fondo. NO se lo pides rellenado al usuario: lo **derivas tú** del material que
+te entregó (paso 0) — leyendo el producto, el repo, el brief. Parte de `plantillas/contexto.ejemplo.md`
+y escribe sus **5 capas** con concreción:
+1. **Quién eres** (rol del asesor y a quién sirve) · 2. **Qué es el producto** · 3. **Objetivo real**
+(el para-qué, no el qué) · 4. **Audiencia** (quién decide, qué objeción trae cada perfil) · 5. **Reglas
+inviolables** (voz, líneas rojas, terminología). Si te falta algo esencial (p. ej. el objetivo de
+negocio o la voz de marca) y no lo deduces del material, pregúntaselo al usuario — una o dos preguntas,
+no un cuestionario. Aquí el sistema deja de ser genérico y «conoce» el producto.
 
 ### 4. Levanta
 ```bash
